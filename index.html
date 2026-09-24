@@ -154,7 +154,7 @@
 <header class="top">
   <div class="eyebrow">Ghana Education Service · Sekyere South District</div>
   <h1>Basic Schools KPI Dashboard</h1>
-  <p>Staff establishment &amp; pupil enrolment · 2024/2025, Term 2</p>
+  <p>Staff establishment &amp; pupil enrolment · <span id="header-period">2024/2025, Term 2</span></p>
 </header>
 
 <div class="identity-bar" id="identity-bar">
@@ -175,6 +175,19 @@
 
   <!-- OVERVIEW -->
   <section class="view active" id="view-overview">
+    <div class="panel" id="academic-period-panel">
+      <h2>Academic period</h2>
+      <p class="desc">Sets the year/term shown at the top of the dashboard and included in exports.</p>
+      <div class="search-row">
+        <input type="text" id="academic-year-input" placeholder="e.g. 2024/2025">
+        <select id="academic-term-input">
+          <option value="Term 1">Term 1</option>
+          <option value="Term 2">Term 2</option>
+          <option value="Term 3">Term 3</option>
+        </select>
+        <button class="btn primary" id="academic-period-save">Save</button>
+      </div>
+    </div>
     <div class="kpi-grid" id="kpi-overview"></div>
     <div class="panel">
       <h2>Enrolment by level</h2>
@@ -246,6 +259,7 @@
             <th data-key="pupils" data-type="num">Pupils</th>
             <th data-key="teaching_staff" data-type="num">Teachers</th>
             <th data-key="ratio" data-type="num">Ratio</th>
+            <th>Classes</th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -411,6 +425,31 @@ function persistState(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(STATE)); }catch(e){ console.warn('could not persist', e); }
 }
 
+// ================= ACADEMIC PERIOD =================
+const PERIOD_KEY = 'ss_academic_period_v1';
+function loadPeriod(){
+  try{
+    const raw = localStorage.getItem(PERIOD_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return { year: '2024/2025', term: 'Term 2' };
+}
+let PERIOD = loadPeriod();
+function applyPeriodToHeader(){
+  document.getElementById('header-period').textContent = `${PERIOD.year}, ${PERIOD.term}`;
+  const yearInput = document.getElementById('academic-year-input');
+  const termInput = document.getElementById('academic-term-input');
+  if(yearInput){ yearInput.value = PERIOD.year; termInput.value = PERIOD.term; }
+}
+applyPeriodToHeader();
+document.getElementById('academic-period-save')?.addEventListener('click', ()=>{
+  const year = document.getElementById('academic-year-input').value.trim() || PERIOD.year;
+  const term = document.getElementById('academic-term-input').value;
+  PERIOD = { year, term };
+  localStorage.setItem(PERIOD_KEY, JSON.stringify(PERIOD));
+  applyPeriodToHeader();
+});
+
 // ================= LOGIN / AUTH =================
 const SESSION_KEY = 'ss_auth_session_v1';
 const ADMIN_USER = 'sekyeresouth', ADMIN_PASS = 'sekyeresouth';
@@ -505,24 +544,24 @@ function openModal(html){
 function closeModal(){ modalBackdrop.classList.remove('open'); }
 modalBackdrop.addEventListener('click', (e)=>{ if(e.target===modalBackdrop) closeModal(); });
 
-const qualLabelMap = {'MASTERS':'Masters','DEGREE':'Degree','DIPLOMA':'Diploma','CERTIFICATE/SHS':'Certificate / SHS','OTHER':'Other','NOT SPECIFIED':'Not specified'};
+const qualLabelMap = {'MASTERS':'Masters','DEGREE':'Degree','DIPLOMA':'Diploma','PHD':'PhD','CERTIFICATE/SHS':'Certificate / SHS','OTHER':'Other','NOT SPECIFIED':'Not specified'};
 const catLabelMap = {'PROFESSIONAL':'Professional','NON PROFESSIONAL':'Non-professional','NON TEACHING':'Non-teaching'};
 
 function teacherDetailHtml(t){
   const rows = [
-    ['Full name', t.name], ['Staff ID', t.staffId], ['SSF No', t.ssfNo],
-    ['School', t.school], ['Circuit', t.circuit],
-    ['Category', catLabelMap[t.category]||t.category], ['Status', t.status],
-    ['Sex', t.sex], ['Rank', t.rank], ['Class', t.class], ['Subject', t.subject], ['Department', t.dept],
-    ['Qualification level', qualLabelMap[t.qual]||t.qual],
-    ['Professional qualification', t.profQual], ['Academic qualification', t.acadQual],
-    ['NTC / Reg No', t.ntcRegNo], ['Area of specialisation', t.specialization],
-    ['College / University', t.college], ['Year completed', t.yearCompleted],
-    ['Assistant head', t.assistantHead], ['Association', t.association],
+    ['First name', t.firstName], ['Surname', t.surname], ['Other name', t.otherName],
+    ['Staff ID', t.staffId], ['Date of birth', t.dob], ['Ghana Card number', t.ghanaCard],
+    ['School', t.school], ['Circuit', t.circuit], ['Level of deployment', t.levelOfDeployment],
+    ['Category', catLabelMap[t.category]||t.category], ['Status', t.status==='TEACHING STAFF'?'Teaching':t.status==='NON-TEACING'?'Non teaching':t.status],
+    ['Gender', t.sex], ['Rank', t.rank], ['Class taught', t.class], ['Subject(s) taught', t.subject],
+    ['Salary scale', t.salaryScale], ['Salary grade', t.salaryGrade], ['Salary point / step', t.salaryPoint],
+    ['Highest qualification', qualLabelMap[t.qual]||t.qual], ['Specify qualification', t.qualSpecify],
+    ['SSNIT number', t.ssnitNumber],
+    ['Association', t.association], ['Religion', t.religion],
+    ['Disability', t.hasDisability], ['Disability type', t.disabilityType],
     ['Date of 1st appointment', t.dateFirstAppt], ['Date of last promotion', t.dateLastPromotion],
     ['Date posted to station', t.datePosted],
-    ['Phone', t.staffTel], ['Email', t.staffEmail],
-    ['Home town', t.homeTown], ['Home district', t.homeTownDistrict], ['Home region', t.homeTownRegion],
+    ['Phone', t.staffTel], ['Emergency contact', t.emergencyContact], ['Email', t.staffEmail],
   ];
   return `<h3>${esc(t.name)}</h3><div class="grid2">` + rows.map(([l,v])=>`
     <div><div class="fld-lbl">${l}</div><div class="fld-val">${esc(v)||'—'}</div></div>
@@ -617,11 +656,14 @@ function exportExcel(rows, columns, filename){
 function exportPDF(rows, columns, title){
   const win = window.open('', '_blank');
   if(!win){ alert('Please allow pop-ups to export a PDF.'); return; }
-  const tableHtml = `<table border="1" cellspacing="0" cellpadding="5" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:11px;width:100%;">
-    <thead><tr>${columns.map(c=>`<th style="background:#123e2b;color:#fff;text-align:left;padding:6px;">${esc(c.label)}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(r=>`<tr>${columns.map(c=>`<td style="padding:5px;">${esc(r[c.key])}</td>`).join('')}</tr>`).join('')}</tbody>
+  const wide = columns.length > 10;
+  const tableHtml = `<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:${wide?'9px':'11px'};width:100%;">
+    <thead><tr>${columns.map(c=>`<th style="background:#123e2b;color:#fff;text-align:left;padding:${wide?'4px':'6px'};white-space:nowrap;">${esc(c.label)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r=>`<tr>${columns.map(c=>`<td style="padding:${wide?'3px':'5px'};white-space:nowrap;">${esc(r[c.key])}</td>`).join('')}</tr>`).join('')}</tbody>
   </table>`;
-  win.document.write(`<html><head><title>${esc(title)}</title></head><body>
+  win.document.write(`<html><head><title>${esc(title)}</title>
+    <style>@page { size: ${wide?'landscape':'auto'}; margin: 12mm; }</style>
+    </head><body>
     <h2 style="font-family:Arial,sans-serif;">${esc(title)}</h2>
     <p style="font-family:Arial,sans-serif;color:#666;font-size:11px;">Sekyere South District Education Office · ${rows.length} record(s) · generated ${new Date().toLocaleDateString()}</p>
     ${tableHtml}</body></html>`);
@@ -656,37 +698,70 @@ function renderSchoolTable(){
     return (av-bv)*dir;
   });
   lastSchoolRows = rows;
-  document.querySelector('#table-schools tbody').innerHTML = rows.map(s=>`
+  document.querySelector('#table-schools tbody').innerHTML = rows.map((s,i)=>`
     <tr><td class="name-col">${esc(s.school)}</td><td>${esc(s.circuit)}</td><td>${fmt(s.pupils)}</td>
-    <td>${s.total_staff?fmt(s.teaching_staff):'—'}</td><td>${ratioBadge(s.ratio)}</td></tr>
-  `).join('') || '<tr><td colspan="5" style="text-align:center;color:#999;padding:16px;">No schools match.</td></tr>';
+    <td>${s.total_staff?fmt(s.teaching_staff):'—'}</td><td>${ratioBadge(s.ratio)}</td>
+    <td><button class="btn" data-classes-idx="${i}">View</button></td></tr>
+  `).join('') || '<tr><td colspan="6" style="text-align:center;color:#999;padding:16px;">No schools match.</td></tr>';
+  document.querySelectorAll('#table-schools [data-classes-idx]').forEach(btn=>{
+    btn.addEventListener('click', ()=>openModal(classDetailHtml(rows[+btn.dataset.classesIdx])));
+  });
+}
+function classesForLevelType(levelType){
+  if(levelType==='JHS ONLY') return CLASS_ROWS.filter(([bk])=>bk.startsWith('jhs'));
+  if(levelType==='PRIMARY WITH KG ONLY') return CLASS_ROWS.filter(([bk])=>!bk.startsWith('jhs'));
+  return CLASS_ROWS; // 'JHS WITH PRIMARY AND KG' or unknown -> show all
+}
+function classDetailHtml(s){
+  const rows = classesForLevelType(s.level_type);
+  const body = rows.map(([bk,gk,label])=>{
+    const b = Number(s[bk])||0, g = Number(s[gk])||0;
+    return `<tr><td>${label}</td><td>${fmt(b)}</td><td>${fmt(g)}</td><td><b>${fmt(b+g)}</b></td></tr>`;
+  }).join('');
+  return `<h3>${esc(s.school)}</h3>
+    <p class="desc" style="margin-bottom:10px;">${esc(s.circuit)} circuit · ${esc(s.level_type||'')}</p>
+    <table style="width:100%;"><thead><tr><th>Class</th><th>Boys</th><th>Girls</th><th>Total</th></tr></thead>
+    <tbody>${body}</tbody>
+    <tfoot><tr style="font-weight:700;border-top:2px solid var(--line);"><td>Total</td><td>${fmt(s.boys)}</td><td>${fmt(s.girls)}</td><td>${fmt(s.pupils)}</td></tr></tfoot>
+    </table>`;
 }
 document.getElementById('school-search').addEventListener('input', renderSchoolTable);
 circuitSelect.addEventListener('change', renderSchoolTable);
-document.querySelectorAll('#table-schools thead th').forEach(th=>th.addEventListener('click', ()=>{
+document.querySelectorAll('#table-schools thead th[data-key]').forEach(th=>th.addEventListener('click', ()=>{
   const key=th.dataset.key; schoolSort.dir=(schoolSort.key===key)?-schoolSort.dir:(th.dataset.type==='str'?1:-1); schoolSort.key=key; renderSchoolTable();
 }));
+function classExportColumns(){
+  const cols = [];
+  CLASS_ROWS.forEach(([bk,gk,label])=>{
+    cols.push({key:bk, label:label+' Boys'});
+    cols.push({key:gk, label:label+' Girls'});
+  });
+  return cols;
+}
 document.getElementById('school-export-xlsx').addEventListener('click', ()=>{
   exportExcel(lastSchoolRows, [
     {key:'school',label:'School'},{key:'circuit',label:'Circuit'},{key:'level_type',label:'Level type'},
-    {key:'pupils',label:'Pupils'},{key:'boys',label:'Boys'},{key:'girls',label:'Girls'},
+    {key:'streams',label:'Streams'},{key:'feeding',label:'Feeding'},
+    ...classExportColumns(),
+    {key:'pupils',label:'Total Pupils'},{key:'boys',label:'Total Boys'},{key:'girls',label:'Total Girls'},
     {key:'teaching_staff',label:'Teaching staff'},{key:'ratio',label:'Pupil-teacher ratio'},
   ], 'sekyere_south_schools.xlsx');
 });
 document.getElementById('school-export-pdf').addEventListener('click', ()=>{
   exportPDF(lastSchoolRows, [
-    {key:'school',label:'School'},{key:'circuit',label:'Circuit'},{key:'pupils',label:'Pupils'},
-    {key:'teaching_staff',label:'Teachers'},{key:'ratio',label:'Ratio'},
-  ], 'Sekyere South — Schools');
+    {key:'school',label:'School'},{key:'circuit',label:'Circuit'},{key:'level_type',label:'Level type'},
+    ...classExportColumns(),
+    {key:'pupils',label:'Total'},{key:'teaching_staff',label:'Teachers'},{key:'ratio',label:'Ratio'},
+  ], 'Sekyere South — Schools, class-by-class enrolment');
 });
 renderSchoolTable();
 document.getElementById('unmatched-list').innerHTML = D.unmatched_schools.map(s=>`• ${esc(s)}`).join('<br>');
 
 // ================= STAFF TAB CHARTS =================
-const qualOrder = ['MASTERS','DEGREE','DIPLOMA','CERTIFICATE/SHS','OTHER','NOT SPECIFIED'];
+const qualOrder = ['MASTERS','PHD','DEGREE','DIPLOMA','CERTIFICATE/SHS','OTHER','NOT SPECIFIED'];
 new Chart(document.getElementById('chart-qual'), {
   type:'bar',
-  data:{labels:qualOrder.map(k=>qualLabelMap[k]), datasets:[{data:qualOrder.map(k=>ov.qualification[k]||0), backgroundColor:[GREENDEEP,GREEN,GOLD,'#d9a86c',MUTED,'#cfcabb'], borderRadius:4}]},
+  data:{labels:qualOrder.map(k=>qualLabelMap[k]), datasets:[{data:qualOrder.map(k=>ov.qualification[k]||0), backgroundColor:[GREENDEEP,'#6b4f9e',GREEN,GOLD,'#d9a86c',MUTED,'#cfcabb'], borderRadius:4}]},
   options:{indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true, grid:{color:'#eee'}}, y:{grid:{display:false}}}}
 });
 const catLabels = Object.keys(ov.category);
@@ -919,15 +994,16 @@ mySchoolSelect.addEventListener('change', ()=>{
   const school = mySchoolSelect.value;
   const content = document.getElementById('school-officer-content');
   if(!school){ content.innerHTML=''; return; }
+  const s = STATE.schools.find(x=>x.school===school) || {};
   const saved = localStorage.getItem(draftKey(school));
   if(saved){
     officerDraft = JSON.parse(saved);
+    officerDraft.level_type = s.level_type || officerDraft.level_type || ''; // always trust current sheet's level type
   } else {
-    const s = STATE.schools.find(x=>x.school===school) || {};
     const enrollment = {};
     CLASS_ROWS.forEach(([bk,gk])=>{ enrollment[bk]=s[bk]||0; enrollment[gk]=s[gk]||0; });
     const teachers = STATE.teachers.filter(t=>t.school===school || t.enrSchool===school).map(t=>Object.assign({},t));
-    officerDraft = { school, circuit: s.circuit||'', streams: s.streams||'', feeding: s.feeding||'', enrollment, teachers };
+    officerDraft = { school, circuit: s.circuit||'', level_type: s.level_type||'', streams: s.streams||'', feeding: s.feeding||'', enrollment, teachers };
   }
   renderOfficerContent();
 });
@@ -946,9 +1022,9 @@ function renderOfficerContent(){
     </div>
     <div class="panel">
       <h2>Enrolment by class</h2>
-      <p class="desc">Update boys and girls counts per class, then save.</p>
+      <p class="desc">Update boys and girls counts per class, then save. Showing classes for: ${esc(d.level_type || 'this school')}.</p>
       <div class="class-grid head"><div>Class</div><div>Boys</div><div>Girls</div></div>
-      ${CLASS_ROWS.map(([bk,gk,label])=>`
+      ${classesForLevelType(d.level_type).map(([bk,gk,label])=>`
         <div class="class-grid">
           <div>${label}</div>
           <input type="number" min="0" data-enr="${bk}" value="${d.enrollment[bk]||0}">
@@ -960,7 +1036,7 @@ function renderOfficerContent(){
       <h2>Teachers at this school</h2>
       <div class="btn-row tight"><button class="btn" id="officer-add-teacher">+ Add teacher</button></div>
       <div class="table-scroll" style="margin-top:10px;">
-        <table><thead><tr><th>Name</th><th>Sex</th><th>Rank</th><th>Subject</th><th></th></tr></thead>
+        <table><thead><tr><th>Name</th><th>Sex</th><th>Level</th><th>Rank</th><th>Subject</th><th></th></tr></thead>
         <tbody id="officer-teacher-body"></tbody></table>
       </div>
     </div>
@@ -980,13 +1056,14 @@ function renderOfficerTeacherTable(){
   body.innerHTML = officerDraft.teachers.map((t,i)=>`
     <tr>
       <td class="name-col">${esc(t.name)}</td><td>${t.sex==='MALE'?'M':t.sex==='FEMALE'?'F':'—'}</td>
+      <td>${esc(t.levelOfDeployment)||'—'}</td>
       <td>${esc(t.rank)||'—'}</td><td>${esc(t.subject)||'—'}</td>
       <td style="white-space:nowrap;">
         <button class="btn" data-edit-t="${i}">Edit</button>
         <button class="btn danger" data-del-t="${i}">Delete</button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="5" style="text-align:center;color:#999;padding:12px;">No teachers yet — add one above.</td></tr>';
+  `).join('') || '<tr><td colspan="6" style="text-align:center;color:#999;padding:12px;">No teachers yet — add one above.</td></tr>';
   body.querySelectorAll('[data-edit-t]').forEach(btn=>btn.addEventListener('click', ()=>openTeacherEditModal(+btn.dataset.editT)));
   body.querySelectorAll('[data-del-t]').forEach(btn=>btn.addEventListener('click', ()=>{
     if(confirm('Remove this teacher from the list?')){
@@ -996,52 +1073,192 @@ function renderOfficerTeacherTable(){
   }));
 }
 
+
+// ================= RANK OPTIONS =================
+const TEACHING_RANKS = ['Director I','Director II','Deputy Director','Assistant Director I','Assistant Director II',
+  'Principal Superintendent','Senior Superintendent I','Senior Superintendent II','Superintendent I','Superintendent II','Pupil Teacher'];
+const NON_TEACHING_RANKS = ['ACCOUNTANT','ACCOUNTS CLERK','ADMIN OFFICER','ARTISAN','ASSIST. ACCOUNTANT','ASSIST. ADMIN OFFICER',
+  'ASSIST. COOK','ASSIST. DOMESTIC BURSAR','ASSIST. DOMESTIC MATRON','ASSIST. LAB. TECHNICIAN','ASSIST. LIBRARIAN','ASSIST. STOREKEEPER',
+  'ASSISTANT CHIEF DRIVER','C/INSP.II','CARETAKER','CARPENTRY','CHIEF COOK','CHIEF DOMESTIC BURSAR','CHIEF DRIVER','CHIEF DRIVER I',
+  'CHIEF HEADMAN','CHIEF LABOURER','CHIEF MESSENGER','CHIEF PANTRY HAND','CHIEF WATCHMAN','CLEANER','CLERK','CLERK GD. I','CLERK GD.II',
+  'CONSERVANCY','CONSERVANCY HEADMAN','CONSERVANCY LABOURER','COOK','DAY CARE SUPERVISOR','DAY WATCHMAN','DECCD',
+  'DEP CHIEF INTERNAL AUDITOR I','DEP CHIEF INTERNAL AUDITOR II','DEP. CHIEF INT. AUD.II','DEP. CHIEF ADMIN. II','DEP. CHIEF BURSAR',
+  'DEP. CHIEF DOMESTIC BURSAR','DEP. CHIEF SUPPLY OFFICER','DEPUTY CHIEF ACCOUNTANT I','DEPUTY CHIEF ACCOUNTANT II',
+  'DEPUTY DOMESTIC BURSAR','DOMESTIC BURSAR','DRIVER GRD I','DRIVER GRD II','DRIVER II','DRIVER MECHANIC','ELECTRICIAN','FARM ASSIST',
+  'FARM HAND','FARM SUPERVISOR','FOREMAN','GEN. LABOURER','HEAD LABOURER','HEAD PANTRY HAND','HEAD SECURITY','HEAD WATCHMAN','HEADMAN',
+  'HEADMAN LABOURER','HOUSE MOTHER','INSTRUCTOR','JNR. LIBRARY ASSISTANT','JUNIOR FOREMAN','LAB. ASSIST. GRADE I','LAB. ASSIST. GRADE II',
+  'LAB. HEADMAN CHIEF','LAB. TECHNICIAN','LABOURER','LABOURER HEADMAN','LAUNDRY MAN','LEANER','LIBARIAN','LIBRARY ASSISTANT','MAISON',
+  'MASSENGER','MATRON','MENTEE','NABCO','NATIONAL SERVICE','NIGHT WATCHMAN','NOT PROVIDED','P T I','P/TECH. OFFICER','P/TYPIST',
+  'PANTRY HAND','PLUMBING','PRIN SUPPLY OFFICER','PRIN. ACCOUNTANT','PRIN. ADM. OFFICER','PRIN. STORE KEEPER','PRINCIPAL ADMIN OFFICER',
+  'PRINCIPAL CHARTERED ACCOUNTANT','PRINCIPAL DOMESTIC BURSAR','PRINCIPAL DRIVER','PRINCIPAL INTERNAL AUDITOR',
+  'PRINCIPAL LABORATORY TECHNICIAN','PRINCIPAL LIBRARIAN','PRINCIPAL SUPPLY OFFICER','PRINCIPAL TECHNICAL INSTRUCTOR',
+  'PRINCIPAL TYPIST','PRIVATE SECRETARY','PROCUREMENT OFF.','SENIOR ACCOUNTS CLERK','SENIOR CARTETA.','SENIOR CLEANER',
+  'SENIOR DOMESTIC BURSAR','SENIOR DRIVER','SENIOR INSTRUCTOR','SENIOR LAB ASST','SENIOR LABOURER','SENIOR LIBRARIAN',
+  'SENIOR NIGHT WATCHMAN','SENIOR PRIVATE SECRETARY','SENIOR STORE KEEPER','SENIOR SUPPLY OFFICER','SENIOR TECHNICAL INSTRUCTOR',
+  'SENIOR WATCHMAN','SNR ACCOUNTANT','SNR ADM. OFFICER','SNR CLERK','SNR SPT. INSTRUCTOR','SNR TYPIST','SNR WATCHMAN',
+  'SNR. ACCTS. CL.','SNR. CONSERVANCY LABOURER','SNR. DOMESTIC MATRON','SNR. FARM HAND','SNR. FARM SUPERVISOR','SNR. HOUSE MOTHER',
+  'SNR. LAB ASSISTANT','SNR. LAB. TECH.','SNR. LABOURER','SNR. LIB ASST.','SNR. MATRON','SNR. WMANATC','SNR.DRIVER','STENO. GD. I',
+  'STENO. GD. II','STENO. SEC','STENOGRAPHER','STENOGRAPHER SECRETARY','STORE ASSISTANT','STORE KEEPER','SUP. CARETAKER','SUPERVISOR',
+  'SUPERVISOR INST','SUPERVISOR INSTRUCTOR','SUPERVISORY TRADESMAN','SUPPLY OFFICER','SUPT. INST.','TECHNICAL INSTRUCTOR II',
+  'TELEPHONIST','TRADESMAN I','TRADESMAN II','TRADESMAN SUPER.','TYPIST GD I','TYPIST GD II','WATCHMAN','WORKSHOP SUPERVISOR','YARD FOREMAN'];
+
+function rankOptionsHtml(selected){
+  const opt = (r)=>`<option value="${esc(r)}" ${selected===r?'selected':''}>${esc(r)}</option>`;
+  const known = TEACHING_RANKS.includes(selected) || NON_TEACHING_RANKS.includes(selected);
+  const preserved = (selected && !known) ? `<option value="${esc(selected)}" selected>${esc(selected)} (current, not on list)</option>` : '';
+  return `${preserved}<optgroup label="Teaching">${TEACHING_RANKS.map(opt).join('')}</optgroup>
+    <optgroup label="Non-teaching">${NON_TEACHING_RANKS.map(opt).join('')}</optgroup>`;
+}
+function fallbackSelectHtml(options, selected, labelFn){
+  const opt = (v)=>`<option value="${esc(v)}" ${selected===v?'selected':''}>${esc(labelFn?labelFn(v):v)}</option>`;
+  const known = options.includes(selected);
+  const preserved = (selected && !known) ? `<option value="${esc(selected)}" selected>${esc(selected)} (current, not on list)</option>` : '';
+  return preserved + options.map(opt).join('');
+}
+
+function splitName(full){
+  const parts = (full||'').trim().split(/\s+/);
+  if(parts.length===0) return {firstName:'', otherName:'', surname:''};
+  if(parts.length===1) return {firstName:parts[0], otherName:'', surname:''};
+  return {firstName:parts[0], otherName:parts.slice(1,-1).join(' '), surname:parts[parts.length-1]};
+}
+
 function openTeacherEditModal(i){
   const isNew = i===null;
-  const t = isNew ? {name:'',sex:'MALE',rank:'',class:'',subject:'',category:'PROFESSIONAL',status:'TEACHING STAFF',qual:'DEGREE',staffId:'',profQual:'',acadQual:''} : officerDraft.teachers[i];
+  const existing = isNew ? {} : officerDraft.teachers[i];
+  const nameParts = (existing.firstName || existing.surname) ? existing : Object.assign(splitName(existing.name), existing);
+  const t = Object.assign({
+    firstName:'', otherName:'', surname:'', staffId:'', dob:'', ghanaCard:'',
+    levelOfDeployment:'PRIMARY', sex:'MALE',
+    category:'PROFESSIONAL', status:'TEACHING STAFF',
+    rank:'', salaryGrade:'PSL', salaryPoint:'', class:'', subject:'',
+    qual:'DIPLOMA', qualSpecify:'', ssnit:'', staffEmail:'', dateFirstAppt:'', staffTel:'',
+    emergencyContact:'', dateLastPromotion:'', datePosted:'', association:'GNAT',
+    religion:'CHRISTIANITY', disability:'NO', disabilityType:'',
+  }, nameParts, existing);
+
   openModal(`
     <h3>${isNew?'Add teacher':'Edit teacher'}</h3>
     <div class="grid2">
-      <div class="full"><label class="field">Full name</label><input type="text" id="f-name" value="${esc(t.name)}"></div>
-      <div><label class="field">Sex</label><select id="f-sex"><option value="MALE" ${t.sex==='MALE'?'selected':''}>Male</option><option value="FEMALE" ${t.sex==='FEMALE'?'selected':''}>Female</option></select></div>
-      <div><label class="field">Rank</label><input type="text" id="f-rank" value="${esc(t.rank)}"></div>
-      <div><label class="field">Class</label><input type="text" id="f-class" value="${esc(t.class)}"></div>
-      <div><label class="field">Subject</label><input type="text" id="f-subject" value="${esc(t.subject)}"></div>
-      <div><label class="field">Category</label><select id="f-category">
-        <option value="PROFESSIONAL" ${t.category==='PROFESSIONAL'?'selected':''}>Professional</option>
-        <option value="NON PROFESSIONAL" ${t.category==='NON PROFESSIONAL'?'selected':''}>Non-professional</option>
-        <option value="NON TEACHING" ${t.category==='NON TEACHING'?'selected':''}>Non-teaching</option>
+      <div><label class="field">First name</label><input type="text" id="f-firstname" value="${esc(t.firstName)}"></div>
+      <div><label class="field">Surname</label><input type="text" id="f-surname" value="${esc(t.surname)}"></div>
+      <div class="full"><label class="field">Other name</label><input type="text" id="f-othername" value="${esc(t.otherName)}"></div>
+
+      <div><label class="field">Staff ID</label><input type="text" id="f-staffid" value="${esc(t.staffId)}"></div>
+      <div><label class="field">Date of birth</label><input type="date" id="f-dob" value="${esc(t.dob)}"></div>
+
+      <div class="full"><label class="field">Ghana Card number</label><input type="text" id="f-ghanacard" value="${esc(t.ghanaCard)}" placeholder="GHA-XXXXXXXXX-X"></div>
+
+      <div><label class="field">Level of deployment</label><select id="f-level">
+        ${['KG','PRIMARY','JHS','SHS'].map(l=>`<option value="${l}" ${t.levelOfDeployment===l?'selected':''}>${l.charAt(0)+l.slice(1).toLowerCase()}</option>`).join('')}
       </select></div>
-      <div><label class="field">Status</label><select id="f-status">
-        <option value="TEACHING STAFF" ${t.status==='TEACHING STAFF'?'selected':''}>Teaching staff</option>
-        <option value="NON-TEACING" ${t.status==='NON-TEACING'?'selected':''}>Non-teaching</option>
+      <div><label class="field">Gender</label><select id="f-sex">
+        <option value="MALE" ${t.sex==='MALE'?'selected':''}>Male</option><option value="FEMALE" ${t.sex==='FEMALE'?'selected':''}>Female</option>
       </select></div>
-      <div><label class="field">Qualification</label><select id="f-qual">
-        ${qualOrder.map(q=>`<option value="${q}" ${t.qual===q?'selected':''}>${qualLabelMap[q]}</option>`).join('')}
+
+      <div><label class="field">Staff category</label><select id="f-category">
+        ${fallbackSelectHtml(['PROFESSIONAL','NON PROFESSIONAL'], t.category, v=>v==='PROFESSIONAL'?'Professional':'Non Professional')}
       </select></div>
-      <div><label class="field">Staff ID (optional)</label><input type="text" id="f-staffid" value="${esc(t.staffId)}"></div>
+      <div><label class="field">Staff status</label><select id="f-status">
+        <option value="TEACHING STAFF" ${t.status==='TEACHING STAFF'?'selected':''}>Teaching</option>
+        <option value="NON-TEACING" ${t.status==='NON-TEACING'?'selected':''}>Non Teaching</option>
+      </select></div>
+
+      <div class="full"><label class="field">Rank</label><select id="f-rank">${rankOptionsHtml(t.rank)}</select></div>
+
+      <div><label class="field">Salary grade</label><select id="f-salarygrade">
+        <option value="PSH" ${t.salaryGrade==='PSH'?'selected':''}>PSH</option><option value="PSL" ${t.salaryGrade==='PSL'?'selected':''}>PSL</option>
+      </select></div>
+      <div><label class="field">Salary point / step</label><input type="text" id="f-salarypoint" value="${esc(t.salaryPoint)}"></div>
+
+      <div><label class="field">Class taught</label><select id="f-class">
+        ${fallbackSelectHtml(['KG 1','KG2','BS1','BS2','BS3','BS4','BS5','BS6','JHS','SHS'], t.class)}
+      </select></div>
+      <div id="f-subject-wrap"><label class="field">Subject(s) taught</label><input type="text" id="f-subject" value="${esc(t.subject)}" placeholder="e.g. Mathematics, Science"></div>
+
+      <div><label class="field">Highest qualification</label><select id="f-qual">
+        ${['DIPLOMA','DEGREE','MASTERS','PHD'].map(q=>`<option value="${q}" ${t.qual===q?'selected':''}>${qualLabelMap[q]}</option>`).join('')}
+      </select></div>
+      <div><label class="field">Specify qualification</label><input type="text" id="f-qualspecify" value="${esc(t.qualSpecify)}" placeholder="e.g. BEd Mathematics"></div>
+
+      <div><label class="field">SSNIT number</label><input type="text" id="f-ssnit" value="${esc(t.ssnit)}"></div>
+      <div><label class="field">Staff email</label><input type="text" id="f-email" value="${esc(t.staffEmail)}"></div>
+
+      <div><label class="field">Date of 1st appointment</label><input type="date" id="f-dateappt" value="${esc(t.dateFirstAppt)}"></div>
+      <div><label class="field">Staff phone number</label><input type="text" id="f-phone" value="${esc(t.staffTel)}"></div>
+
+      <div class="full"><label class="field">Emergency contact number</label><input type="text" id="f-emergency" value="${esc(t.emergencyContact)}"></div>
+
+      <div><label class="field">Date of last promotion</label><input type="date" id="f-promo" value="${esc(t.dateLastPromotion)}"></div>
+      <div><label class="field">Date posted to current station</label><input type="date" id="f-posted" value="${esc(t.datePosted)}"></div>
+
+      <div><label class="field">Association type</label><select id="f-association">
+        ${['GNAT','CONCERNED TEACHERS','INNOVATIVE TEACHERS UNION','NAGRAT','TEWU'].map(a=>`<option value="${a}" ${t.association===a?'selected':''}>${a.charAt(0)+a.slice(1).toLowerCase()}</option>`).join('')}
+      </select></div>
+      <div><label class="field">Religion</label><select id="f-religion">
+        ${['CHRISTIANITY','ISLAM','TRADITIONALIST','OTHERS'].map(r=>`<option value="${r}" ${t.religion===r?'selected':''}>${r.charAt(0)+r.slice(1).toLowerCase()}</option>`).join('')}
+      </select></div>
+
+      <div><label class="field">Staff disability</label><select id="f-disability">
+        <option value="NO" ${t.disability==='NO'?'selected':''}>No</option><option value="YES" ${t.disability==='YES'?'selected':''}>Yes</option>
+      </select></div>
+      <div id="f-disabtype-wrap"><label class="field">Disability type</label><input type="text" id="f-disabtype" value="${esc(t.disabilityType)}"></div>
     </div>
+    <div class="note" style="margin-top:12px;"><b>Handle with care.</b> Ghana Card number, religion, and disability details are sensitive. Keep this file off public hosting if these fields are filled in for real staff.</div>
     <div class="btn-row" style="margin-top:14px;">
       <button class="btn primary" id="f-save">Save</button>
       <button class="btn" id="f-cancel">Cancel</button>
     </div>
   `);
+
+  function toggleSubjectField(){
+    const lvl = document.getElementById('f-level').value;
+    document.getElementById('f-subject-wrap').style.display = (lvl==='JHS'||lvl==='SHS') ? '' : 'none';
+  }
+  function toggleDisabilityField(){
+    document.getElementById('f-disabtype-wrap').style.display = document.getElementById('f-disability').value==='YES' ? '' : 'none';
+  }
+  document.getElementById('f-level').addEventListener('change', toggleSubjectField);
+  document.getElementById('f-disability').addEventListener('change', toggleDisabilityField);
+  toggleSubjectField(); toggleDisabilityField();
+
   document.getElementById('f-cancel').addEventListener('click', closeModal);
   document.getElementById('f-save').addEventListener('click', ()=>{
+    const firstName = document.getElementById('f-firstname').value.trim();
+    const otherName = document.getElementById('f-othername').value.trim();
+    const surname = document.getElementById('f-surname').value.trim();
+    const name = [firstName, otherName, surname].filter(Boolean).join(' ');
+    if(!name){ alert('Please enter at least a first name or surname.'); return; }
     const updated = {
-      name: document.getElementById('f-name').value.trim(),
+      firstName, otherName, surname, name,
+      staffId: document.getElementById('f-staffid').value.trim(),
+      dob: document.getElementById('f-dob').value,
+      ghanaCard: document.getElementById('f-ghanacard').value.trim(),
+      levelOfDeployment: document.getElementById('f-level').value,
       sex: document.getElementById('f-sex').value,
-      rank: document.getElementById('f-rank').value.trim(),
-      class: document.getElementById('f-class').value.trim(),
-      subject: document.getElementById('f-subject').value.trim(),
       category: document.getElementById('f-category').value,
       status: document.getElementById('f-status').value,
+      rank: document.getElementById('f-rank').value,
+      salaryGrade: document.getElementById('f-salarygrade').value,
+      salaryPoint: document.getElementById('f-salarypoint').value.trim(),
+      class: document.getElementById('f-class').value,
+      subject: (document.getElementById('f-level').value==='JHS'||document.getElementById('f-level').value==='SHS') ? document.getElementById('f-subject').value.trim() : 'CLASS TEACHER',
       qual: document.getElementById('f-qual').value,
-      staffId: document.getElementById('f-staffid').value.trim(),
-      profQual: t.profQual||'', acadQual: t.acadQual||'',
+      qualSpecify: document.getElementById('f-qualspecify').value.trim(),
+      ssnit: document.getElementById('f-ssnit').value.trim(),
+      staffEmail: document.getElementById('f-email').value.trim(),
+      dateFirstAppt: document.getElementById('f-dateappt').value,
+      staffTel: document.getElementById('f-phone').value.trim(),
+      emergencyContact: document.getElementById('f-emergency').value.trim(),
+      dateLastPromotion: document.getElementById('f-promo').value,
+      datePosted: document.getElementById('f-posted').value,
+      association: document.getElementById('f-association').value,
+      religion: document.getElementById('f-religion').value,
+      disability: document.getElementById('f-disability').value,
+      disabilityType: document.getElementById('f-disability').value==='YES' ? document.getElementById('f-disabtype').value.trim() : '',
       circuit: officerDraft.circuit, school: officerDraft.school,
+      id: existing.id,
     };
-    if(!updated.name){ alert('Please enter a name.'); return; }
     if(isNew) officerDraft.teachers.push(updated); else officerDraft.teachers[i] = updated;
     renderOfficerTeacherTable();
     closeModal();
